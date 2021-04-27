@@ -1,0 +1,400 @@
+/*
+#***h* PERSIANN/persiann-ccs-cdr.c
+#
+# NAME 
+#    persiann-ccs-cdr-daily.c
+#
+
+#
+# AUTHOR
+#      Dan K. Braithwaite for Professor Soroosh Sorooshian at the Center
+#        for Hydrometeorology and Remote
+#        Sensing (CHRS) Department of Civil and Environmental Engineering
+#        University of California, Irvine
+#
+# 
+#
+#
+# FILES
+#       Input file is one daily PERSIANN-CCS binary file
+#       Output is one daily netCDF-4 file with metadata
+#
+#
+# EXTERNALS
+#      NETCDF-4 libraries
+#
+# SUBROUTINES
+#      None called by external programs
+#
+# REFERENCES
+#      None for this code
+#
+# USAGE
+#	called from do_PERSIANN-CDR_daily
+#     ./persiann-cdr_daily  inputfile outputfile "list of B1 files used" GPCP_used create_date from_date to_date data_date   #days
+#               
+#
+# COMPILER NOTES:
+#       compile with netcdf-4 include path and library path and libnetcdf
+#       cc -I /usr/local/include -L /usr/local/lib -o persiann-cdr_daily persiann-cdr_daily.c  -lnetcdf
+#
+#***  
+
+#END HEADER
+*/
+
+
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <netcdf.h>
+
+#define NR 480
+#define NC 1440
+
+#define NV 2  /* used for bounds of coordinates for each cell */
+
+main(int ac, char *av[])
+{
+    FILE *fi;
+    int i,j;
+    float t;
+
+    float pers[1][NC][NR];  /* added time dimension */
+    float id[NR][NC];
+    float lat[NR];
+    float lon[NC];
+	 
+    float lat_bnds[NR][NV];
+    float lon_bnds[NC][NV];
+ 
+    int  stat;  /* return status */
+    int  ncid;  /* netCDF id */
+
+    char source[400]; /* av3 thru av11 */
+    char date_cr[25]; /* av12 */
+    char fcover_time[25];  /* av13. used for time_start YYYY-MM-DDT00:00Z */
+    char tcover_time[25];  /* av14. used for time_end YYYY-MM-DDT23:59Z */
+    char dat_time[15]; /* av15 YYYY-MM-DD of daily data date timestamp */
+    int  time_ndays;
+
+/* const strings for meta */
+    char titl[] = "Daily PERSIANN-CDR near global precipitation at 0.25 degrees";
+    char comm[] = "Daily PERSIANN-CDR precipitation estimates for long-term data record";
+    char license[] = "No constraints on data access or use.";
+    char summary[] = "Daily near global precipitation estimates at 0.25 deg resolution over 30-year record";
+    char meta_conv[] = "CF-1.6,Unidata Dataset Discovery v1.0, NOAA CDR v1.0, GDS v2.0";
+    char vocab[] = "CF Standard Name Table (v19, 28 April 2012)";
+    char id_arch[50];
+    char *idptr;  /* for id_arch basename */
+    char nam_auth[] = "gov.noaa.ncdc";
+
+    char keyw[] = "EARTH SCIENCE > ATMOSPHERE > PRECIPITATION";
+
+    char keyw_voc[] = "GCMD Keywords, Version 8.0.0.0.0";
+
+    char cdm_dtype[] = "Grid";
+
+    char proj[] = "Satellite Data Support for Hydrologic and Water Resources Planning and Management.  Sponsor: NOAA";
+
+    char cr_name[] = "Dan Braithwaite";
+    char cr_email[] = "dbraithw@uci.edu";
+    char cr_url[] = "http://www.chrs.web.uci.edu/";
+    char cr_inst[] = "UC-IRVINE/CHRS, Center for Hydrometeorology and Remote Sensing, University of California, Irvine";
+
+    char contrib_name[] = "Soroosh Sorooshian, Kuolin Hsu, Hamed Ashouri, Dan Braithwaite";
+    char contrib_role[] = "PrincipalInvestigator, Professor, Author, Author";
+
+    char ack[] = "NOAA CICS"; 
+
+    char lat_units[] = "degrees_north";
+    char lon_units[] = "degrees_east";
+
+    char time_res[] = "P1D";
+
+
+    char cdr_program[] = "NOAA Climate Data Record Program";
+    char cdr_variable[] = "precipitation";
+    char meta_link[] = "gov.noaa.ncdc:C00854"; 
+/*    char meta_link[] = "gov.noaa.ncdc:C00835"; */
+    char prod_vers[] = "v01r01";
+/*
+    char platf[] = "n/a";
+    char sensor[] = "n/a";
+*/
+    char res[] = "0.25 degrees";
+
+    float lat_min[] = {-60.0};
+    float lat_max[] = { 60.0};
+    float lon_min[] = {0.0};
+    float lon_max[] = {360.0};
+    float lat_res[] = {.25};
+    float lon_res[] = {.25};
+
+/* variable att float */
+
+    float lat_valid[] = {-60.0,60.0};
+    float lat_vmin[] = {-60.0};
+    float lat_vmax[] = {60.0};
+    float lon_valid[] = {0.0,360.0};
+    float lon_vmin[] = {0.0};
+    float lon_vmax[] = {360.0};
+    float PERS_vmin[] = {0.0};
+    float PERS_vmax[] = {999999.0};
+    float PERS_valid[] = {0.0,999999.0};
+
+
+    /* dimension ids */
+    int time_dim;
+    int lat_dim;
+    int lon_dim;
+    int nv_dim;
+
+    /* dimension lengths */
+    size_t lat_len = NR;
+    size_t lon_len = NC;
+    size_t time_len = 1;
+    size_t nv_len = 2;
+
+    /* variable ids */
+    int time_id;
+    int lat_id;
+    int lon_id;
+    int PERS_id; 
+    int latbnds_id; 
+    int lonbnds_id; 
+
+
+    /* rank (number of dimensions) for each variable */
+#   define RANK_lat 1
+#   define RANK_lon 1
+#   define RANK_PERS 3
+#   define RANK_BNDS 2
+
+    /* variable shapes */
+    int time_dims[1];
+    int lat_dims[RANK_lat];
+    int lon_dims[RANK_lon];
+    int PERS_dims[RANK_PERS];
+    int latbnds_dims[RANK_BNDS];
+    int lonbnds_dims[RANK_BNDS];
+
+    /* use fixed 3 & 11 for Gridsat and GPCP files  */
+    strcpy(source,av[3]);
+    for(i=4; i < 12; i++)
+    {
+      strcat(source,",");
+      strcat(source,av[i]);
+    }
+
+    strcpy(date_cr,av[12]);
+    strcpy(fcover_time,av[13]);
+    strcpy(tcover_time,av[14]);
+    strcpy(dat_time,av[15]);
+/*    time_ndays = atoi(av[16]); */
+    sscanf(av[16],"%d",&time_ndays);
+
+    for(i=0,t=60.0-.125; i < NR; i++,t-=.25)
+    {
+	lat[i] = t;
+	lat_bnds[i][0] = t+.125;
+	lat_bnds[i][1] = t-.125;
+    }
+
+    for(i=0,t=0.0+.125; i < NC; i++,t+=.25)
+    {
+	lon[i] = t;
+	lon_bnds[i][0] = t-.125;
+	lon_bnds[i][1] = t+.125;
+    }
+
+    idptr = index(av[2],'/');
+    strcpy(id_arch,idptr+1); /* output filename is id_arch instead of TBD */
+
+    /* enter define mode */
+    stat = nc_create(av[2], NC_NETCDF4|NC_CLOBBER, &ncid);
+
+    /* define dimensions */
+    stat = nc_def_dim(ncid, "time", time_len, &time_dim);
+    stat = nc_def_dim(ncid, "lat", lat_len, &lat_dim);
+    stat = nc_def_dim(ncid, "lon", lon_len, &lon_dim);
+    stat = nc_def_dim(ncid, "nv", nv_len, &nv_dim);
+
+    /* define variables */
+
+
+    time_dims[0] = time_dim;
+    stat = nc_def_var(ncid, "time", NC_INT, 1, time_dims, &time_id);
+
+    lat_dims[0] = lat_dim;
+    stat = nc_def_var(ncid, "lat", NC_FLOAT, RANK_lat, lat_dims, &lat_id);
+
+    lon_dims[0] = lon_dim;
+    stat = nc_def_var(ncid, "lon", NC_FLOAT, RANK_lon, lon_dims, &lon_id);
+
+    lonbnds_dims[0] = lon_dim;
+    lonbnds_dims[1] = nv_dim;
+    stat = nc_def_var(ncid, "lon_bnds", NC_FLOAT, RANK_BNDS, lonbnds_dims, &lonbnds_id);
+
+    latbnds_dims[0] = lat_dim;
+    latbnds_dims[1] = nv_dim;
+    stat = nc_def_var(ncid, "lat_bnds", NC_FLOAT, RANK_BNDS, latbnds_dims, &latbnds_id);
+
+
+    PERS_dims[0] = time_dim;
+    PERS_dims[1] = lon_dim;
+    PERS_dims[2] = lat_dim;
+    stat = nc_def_var(ncid, "precipitation", NC_FLOAT, RANK_PERS, PERS_dims, &PERS_id);
+
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "datetime", strlen(dat_time),dat_time );
+
+
+    /* assign global attributes */
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "Conventions", 6, "CF-1.6");
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "title", strlen(titl), titl);
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "comment", strlen(comm), comm);
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "source", strlen(source),source);
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "Metadata_Conventions", strlen(meta_conv),meta_conv);
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "standard_name_vocabulary", strlen(vocab),vocab);
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "id", strlen(id_arch),id_arch);
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "naming_authority", strlen(nam_auth),nam_auth);
+    /* data created data_cr */
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "date_created", strlen(date_cr),date_cr);
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "license", strlen(license),license);
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "summary", strlen(summary),summary);
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "keywords", strlen(keyw),keyw);
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "keywords_vocabulary", strlen(keyw_voc),keyw_voc);
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "cdm_data_type", strlen(cdm_dtype),cdm_dtype);
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "project", strlen(proj),proj);
+
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "creator_name", strlen(cr_name),cr_name);
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "creator_email", strlen(cr_email),cr_email);
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "creator_url", strlen(cr_url),cr_url);
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "institution", strlen(cr_inst),cr_inst);
+
+    stat = nc_put_att_float(ncid, NC_GLOBAL, "geospatial_lat_min", NC_FLOAT, 1,lat_min);
+    stat = nc_put_att_float(ncid, NC_GLOBAL, "geospatial_lat_max", NC_FLOAT, 1,lat_max);
+    stat = nc_put_att_float(ncid, NC_GLOBAL, "geospatial_lon_min", NC_FLOAT, 1,lon_min);
+    stat = nc_put_att_float(ncid, NC_GLOBAL, "geospatial_lon_max", NC_FLOAT, 1,lon_max);
+
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "geospatial_lat_units", strlen(lat_units),lat_units);
+    stat = nc_put_att_float(ncid, NC_GLOBAL, "geospatial_lat_resolution", NC_FLOAT, 1,lat_res);
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "geospatial_lon_units", strlen(lon_units),lon_units);
+    stat = nc_put_att_float(ncid, NC_GLOBAL, "geospatial_lon_resolution", NC_FLOAT, 1,lon_res);
+
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "time_coverage_start", strlen(fcover_time),fcover_time);
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "time_coverage_end", strlen(tcover_time),tcover_time);
+
+/* added some contributor/role pairs */
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "contributor_name", strlen(contrib_name),contrib_name);
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "contributor_role", strlen(contrib_role),contrib_role);
+/*    stat = nc_put_att_text(ncid, NC_GLOBAL, "acknowledgement", strlen(ack),ack); */
+
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "cdr_program", strlen(cdr_program),cdr_program);
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "cdr_variable", strlen(cdr_variable),cdr_variable);
+
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "metadata_link", strlen(meta_link),meta_link);
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "product_version", strlen(prod_vers),prod_vers);
+
+/*
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "platform", strlen(platf),platf);
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "sensor", strlen(sensor),sensor);
+*/
+    stat = nc_put_att_text(ncid, NC_GLOBAL, "spatial_resolution", strlen(res),res);
+
+    /* time standard var */
+    stat = nc_put_att_text(ncid, time_id, "standard_name", 4, "time");
+    stat = nc_put_att_text(ncid, time_id, "long_name", 4, "time");
+    stat = nc_put_att_text(ncid, time_id, "units", 27, "days since 1979-01-01 0:0:0");
+
+     /* lat */
+    stat = nc_put_att_text(ncid, lat_id, "standard_name", 8, "latitude");
+    stat = nc_put_att_text(ncid, lat_id, "long_name", 8, "latitude");
+    stat = nc_put_att_text(ncid, lat_id, "units", 13, "degrees_north");
+    stat = nc_put_att_float(ncid, lat_id, "valid_max",NC_FLOAT, 1,lat_vmax);
+    stat = nc_put_att_float(ncid, lat_id, "valid_min",NC_FLOAT, 1,lat_vmin);
+    stat = nc_put_att_text(ncid, lat_id, "bounds",8,"lat_bnds");
+/*
+    stat = nc_put_att_float(ncid, lat_id, "valid_range", NC_FLOAT,2,lat_valid);
+*/
+    
+     /* long */
+    stat = nc_put_att_text(ncid, lon_id, "standard_name", 9, "longitude");
+    stat = nc_put_att_text(ncid, lon_id, "long_name", 9, "longitude");
+    stat = nc_put_att_text(ncid, lon_id, "units", 12, "degrees_east");
+    stat = nc_put_att_float(ncid, lon_id, "valid_max",NC_FLOAT, 1,lon_vmax);
+    stat = nc_put_att_float(ncid, lon_id, "valid_min",NC_FLOAT, 1,lon_vmin);
+    stat = nc_put_att_text(ncid, lon_id, "bounds",8,"lon_bnds");
+/*
+    stat = nc_put_att_float(ncid, lon_id, "valid_range", NC_FLOAT,2,lon_valid);
+*/
+    
+     /* PERSIANN precip */
+    static const float PERS_missing_value_att[] = {-9999} ;
+    stat = nc_put_att_float(ncid, PERS_id, "missing_value", NC_FLOAT, 1, PERS_missing_value_att);
+/*							    12345678901234567890123456789 */
+    stat = nc_put_att_text(ncid, PERS_id, "long_name", 28, "PERSIANN daily precipitation");
+    stat = nc_put_att_text(ncid, PERS_id, "units", 2, "mm");
+    stat = nc_put_att_float(ncid, PERS_id, "valid_max",NC_FLOAT, 1,PERS_vmax);
+    stat = nc_put_att_float(ncid, PERS_id, "valid_min",NC_FLOAT, 1,PERS_vmin);
+    stat = nc_put_att_text(ncid, PERS_id, "cell_method",3, "sum");
+/*
+    stat = nc_put_att_float(ncid, PERS_id, "valid_range", NC_FLOAT,2,PERS_valid);
+*/
+
+/* cf standard not    stat = nc_put_att_text(ncid, PERS_id, "standard_name", 13, "precipitation"); */
+    
+     /* units */
+/*    stat = nc_put_att_text(ncid, PERS_id, "units", 10, "mm per day"); */
+    
+     /* _FillValue*/
+    static const float PERS_FillValue_att[] = {-1} ;
+    stat = nc_put_att_float(ncid, PERS_id, "_FillValue", NC_FLOAT, 1, PERS_FillValue_att);
+
+/*nc_def_var_deflate(int ncid, int varid, int shuffle, int deflate, 
+   int deflate_level); */
+
+    nc_def_var_deflate(ncid,PERS_id,0,1,4);
+
+    /* leave define mode */
+    stat = nc_enddef (ncid);
+
+    /* assign variable data */
+
+
+   fi = fopen(av[1],"r");
+   fread((char *) id,sizeof(id),1,fi);
+   fclose(fi);
+
+   for(j=0; j < NR; j++)
+      for(i=0; i < NC; i++)
+	 pers[0][i][j] = id[j][i];
+
+
+    size_t start[] = {0} ;
+
+    size_t timecnt[] = {1} ;
+    stat = nc_put_vara_int(ncid, time_id, start, timecnt, &time_ndays);
+
+    size_t bndsstart[] = {0,0} ;
+
+    size_t latbnds_cnt[] = {NR,NV};
+    stat = nc_put_vara_float(ncid, latbnds_id, bndsstart, latbnds_cnt, &(lat_bnds[0][0]));
+    size_t lonbnds_cnt[] = {NC,NV};
+    stat = nc_put_vara_float(ncid, lonbnds_id, bndsstart, lonbnds_cnt, &(lon_bnds[0][0]));
+
+    size_t latcnt[] = {NR} ;
+    stat = nc_put_vara_float(ncid, lat_id, start, latcnt, lat);
+
+    size_t loncnt[] = {NC} ;
+    stat = nc_put_vara_float(ncid, lon_id, start, loncnt, lon);
+
+    size_t persstart[] = {0,0,0} ;
+    size_t perscnt[] = {1,NC,NR} ;
+    stat = nc_put_vara_float(ncid, PERS_id, persstart, perscnt, &(pers[0][0][0])); 
+
+    stat = nc_close(ncid);
+    return 0;
+}
